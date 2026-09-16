@@ -119,11 +119,14 @@ extension Workspace {
     @discardableResult
     func updatePanelTitle(panelId: UUID, title: String) -> Bool {
         let remote = cloudProjectedResource(forPanel: panelId).flatMap { $0.kind == .terminal ? $0 : nil }
-        let trimmed = (remote?.cloudProcessDisplayTitle ?? title).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, panels[panelId] != nil else { return false }
-        guard remote != nil || shouldApplyRestoredPanelTitle(panelId: panelId, rawTitle: trimmed) else {
+        let rawTrimmed = (remote?.cloudProcessDisplayTitle ?? title).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawTrimmed.isEmpty, panels[panelId] != nil else { return false }
+        guard remote != nil || shouldApplyRestoredPanelTitle(panelId: panelId, rawTitle: rawTrimmed) else {
             return false
         }
+        let trimmed = remote == nil
+            ? Self.titlePrefixedWithDirectoryName(rawTrimmed, directory: panelDirectories[panelId])
+            : rawTrimmed
         var didMutate = false
         var didMutatePanelTitle = false
         var didMutateWorkspaceTitle = false
@@ -169,6 +172,32 @@ extension Workspace {
         }
 #endif
         return didMutate
+    }
+
+    /// Prefixes a program-set terminal title (e.g. Claude Code's session name)
+    /// with the terminal's directory name so the repository stays visible:
+    /// `✳ Fix login` in `~/src/app` becomes `✳ app / Fix login`. A leading
+    /// single-glyph status marker stays in front. Titles that already start
+    /// that are the directory name itself, `name: command`, or `~` (the shell
+    /// prompt titles from `~/.zshrc`) are unchanged.
+    nonisolated static func titlePrefixedWithDirectoryName(_ title: String, directory: String?) -> String {
+        guard let directory = directory?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !directory.isEmpty else { return title }
+        let name = (directory as NSString).lastPathComponent
+        guard !name.isEmpty, name != "/" else { return title }
+
+        var marker = ""
+        var body = Substring(title)
+        if let first = title.first,
+           !first.isLetter, !first.isNumber, !first.isASCII,
+           title.dropFirst().first == " " {
+            marker = "\(first) "
+            body = title.dropFirst(2)
+        }
+        guard body != name, !body.hasPrefix("\(name):"), !body.hasPrefix("\(name) / "), !body.hasPrefix("~") else {
+            return title
+        }
+        return "\(marker)\(name) / \(body)"
     }
 
     private static func normalizedCustomDescription(_ description: String?) -> String? {
