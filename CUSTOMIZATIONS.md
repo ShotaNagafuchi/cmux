@@ -1,15 +1,20 @@
 # cmux カスタム履歴
 
-本家 manaflow-ai/cmux に対する自分用の変更の記録。ローカルの `custom` ブランチで管理（本家の更新は `git rebase origin/main` で取り込む）。
-設定で直せるものは設定で直し、ソース変更が要るものだけ `custom` ブランチに積む。
+本家 manaflow-ai/cmux に対する自分用の変更の記録。
+設定で直せるものは設定で直し、ソース変更が要るものは `custom` ブランチで実装・動作確認した。
+
+**2026-09-17 時点の方針:** ソース変更（#1, #5）は自分用ビルドを使い続けず、ローカルからは外して公式版に戻した。
+公式版の更新にそのまま追従するため。実装はこの `custom` ブランチ（fork: ShotaNagafuchi/cmux）にログとして残し、
+本家へは PR ではなく #2595 へのコメントと issue で提案する（本家は外部 PR のマージが少ないため）。
+設定変更（#2〜#4）は公式版でも効くので残している。
 
 | # | 日付 | 気になった点 | 対応 | 種別 | 状態 |
 |---|---|---|---|---|---|
-| 1 | 2026-09-17 | Cmd+Ctrl+F で別 Space にフルスクリーンになる（iTerm2 のように同じ画面で広げたい） | 非ネイティブフルスクリーンを実装 | ソース変更 | 実装済み・確認待ち |
+| 1 | 2026-09-17 | Cmd+Ctrl+F で別 Space にフルスクリーンになる（iTerm2 のように同じ画面で広げたい） | 非ネイティブフルスクリーンを実装 | ソース変更 | 動作確認済み → ローカルから外した（ログのみ） |
 | 2 | 2026-09-17 | ターミナルを半透明にしたい | Ghostty 設定 `background-opacity` | 設定 | 適用済み |
 | 3 | 2026-09-17 | タブ名・サイドバーでどのリポジトリか分からない | サイドバー設定＋zsh のタイトルフック | 設定 | 適用済み |
 | 4 | 2026-09-17 | Claude Code の質問文がダーク表示で黒字になり読めない | Claude Code の `theme` を dark に | 設定（Claude Code 側） | 適用済み |
-| 5 | 2026-09-17 | Claude Code 実行中はタイトルがセッション名になり、リポジトリ名が消える | タイトルの頭にフォルダ名を付ける（`cmux / ○○`） | ソース変更 | 実装済み・確認待ち |
+| 5 | 2026-09-17 | Claude Code 実行中はタイトルがセッション名になり、リポジトリ名が消える | タイトルの頭にフォルダ名を付ける（`cmux / ○○`） | ソース変更 | 動作確認済み → ローカルから外した（ログのみ） |
 
 ---
 
@@ -21,6 +26,7 @@
   - `Sources/AppDelegate.swift`, `Sources/cmuxApp.swift`: 呼び出し元
   - `Sources/AppDelegate+MonitorMemory.swift`, `Sources/AppDelegate.swift`（セッション保存）: 広げている間の画面サイズをウィンドウ位置として保存しない
   - `Sources/WindowDecorationsController.swift`: 広げている間は信号機ボタンを隠す
+- 本家の関連: PR #2595（Ghostty 同様 `.titled` を外す方式。cmux では SwiftUI のクリック判定が壊れると報告）、issue #2581。本実装は `.titled` を残すので問題を回避できる。本家に出すなら `macos-non-native-fullscreen` でオン/オフ＋テストが必要。
 - 挙動: 緑ボタンは従来どおり標準フルスクリーン。標準フルスクリーン中に Cmd+Ctrl+F を押すとそこから抜ける。ウィンドウを閉じる・別ディスプレイへ移ると自動で解除。
 
 ## 2. 半透明
@@ -29,12 +35,12 @@
 
 ```
 theme = light:Apple System Colors Light,dark:Apple System Colors
-background-opacity = 0.65
+background-opacity = 0.72
 ```
 
 - Ghostty 設定に1行でも書くと cmux の自動ライト/ダーク配色が切れるため、cmux の既定と同じテーマ名を `theme` で明示している。
 - 透明度は `background-opacity` を変えて `cmux reload-config`。
-- 2026-09-17 調整: 0.8 → 0.65（もう少し薄く）、ぼかし（`background-blur = 20`）は不要なので削除。
+- 2026-09-17 調整: 0.8 → 0.65（もう少し薄く）、ぼかし（`background-blur = 20`）は不要なので削除。その後 0.65 → 0.72（少しだけ透けにくく）。
 
 ## 3. リポジトリ名が見えない
 
@@ -61,6 +67,12 @@ background-opacity = 0.65
 - 制約: タイトルが送られた時点のディレクトリで付く。Claude Code 実行中に cwd は変わらないので実用上は問題ない。
 
 ---
+
+## ソース変更を外した記録（2026-09-17）
+
+- ローカルは `main` に戻し、カスタム版アプリ（`cmux DEV custom`）とビルド中間ファイル（`~/Library/Developer/Xcode/DerivedData/cmux-custom`、約 7GB）を削除。
+- 再度使いたくなったら: `git switch custom` → `git rebase origin/main` → `./scripts/reload.sh --tag custom`（要 zig・rustup・Metal ツールチェーン、空き 10GB 以上）。
+- ビルドのために入れた zig（brew）と rustup（brew、keg-only）は残している。
 
 ## 戻し方
 
