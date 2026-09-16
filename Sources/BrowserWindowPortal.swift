@@ -248,7 +248,7 @@ final class WindowBrowserHostView: NSView {
 #if DEBUG
     private static func shouldLogPointerEvent(_ event: NSEvent?) -> Bool {
         switch event?.type {
-        case .leftMouseDown, .leftMouseDragged, .leftMouseUp:
+        case .leftMouseDown, .leftMouseDragged, .leftMouseUp, .mouseMoved, .mouseEntered, .mouseExited:
             return true
         default:
             return false
@@ -379,6 +379,15 @@ final class WindowBrowserHostView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+#if DEBUG
+        var pending: [NSView] = [self]
+        var descriptions: [String] = []
+        while let view = pending.popLast(), descriptions.count < 30 {
+            descriptions.append("\(type(of: view)) frame=\(view.frame) tracking=\(view.trackingAreas.map { \"\($0.options.rawValue):\(String(describing: $0.owner))\" })")
+            pending.append(contentsOf: view.subviews)
+        }
+        cmuxDebugLog("browser.hover.host point=\(point) accepts=\(window?.acceptsMouseMovedEvents ?? false) tree=\(descriptions.joined(separator: \"; \"))")
+#endif
         updateDividerCursor(at: point)
     }
 
