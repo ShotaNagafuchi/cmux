@@ -5,20 +5,23 @@
 
 | # | 日付 | 気になった点 | 対応 | 種別 | 状態 |
 |---|---|---|---|---|---|
-| 1 | 2026-09-17 | Cmd+Ctrl+F で別 Space にフルスクリーンになる（iTerm2 のように同じ画面で広げたい） | 未対応。2〜4 を試してから実装するか決める | ソース変更 | 保留 |
+| 1 | 2026-09-17 | Cmd+Ctrl+F で別 Space にフルスクリーンになる（iTerm2 のように同じ画面で広げたい） | 非ネイティブフルスクリーンを実装 | ソース変更 | 実装済み・確認待ち |
 | 2 | 2026-09-17 | ターミナルを半透明にしたい | Ghostty 設定 `background-opacity` | 設定 | 適用済み |
 | 3 | 2026-09-17 | タブ名・サイドバーでどのリポジトリか分からない | サイドバー設定＋zsh のタイトルフック | 設定 | 適用済み |
 | 4 | 2026-09-17 | Claude Code の質問文がダーク表示で黒字になり読めない | Claude Code の `theme` を dark に | 設定（Claude Code 側） | 適用済み |
+| 5 | 2026-09-17 | Claude Code 実行中はタイトルがセッション名になり、リポジトリ名が消える | タイトルの頭にフォルダ名を付ける（`cmux / ○○`） | ソース変更 | 実装済み・確認待ち |
 
 ---
 
-## 1. フルスクリーン（保留）
+## 1. フルスクリーン（ソース変更）
 
-- 原因: Cmd+Ctrl+F は `NSWindow.toggleFullScreen`（macOS 標準＝別 Space）を呼ぶ。
-  - `Sources/AppDelegate.swift`（ショートカット処理）、`Sources/cmuxApp.swift`（View メニュー）
-- Ghostty の `macos-non-native-fullscreen` は cmux では読まれない（Ghostty の macOS アプリ側のコードで、cmux は取り込んでいない）。cmux.json にも該当設定なし。
-- 実装する場合の注意: レイアウト・ウィンドウ位置の保存/復元・ディスプレイ変更時の処理が `styleMask.contains(.fullScreen)` を見ている。非ネイティブ方式ではこれが false のままなので、状態を自前で持って各所に渡す必要がある。参考実装は `ghostty/macos/Sources/Helpers/Fullscreen.swift` の `NonNativeFullscreen`。
-- 当面の代替: タイトルバーのダブルクリックで同じ画面のまま最大化（メニューバーと Dock は残る）。
+- 原因: Cmd+Ctrl+F は `NSWindow.toggleFullScreen`（macOS 標準＝別 Space）を呼ぶ。Ghostty の `macos-non-native-fullscreen` は cmux では読まれない。
+- 変更: Cmd+Ctrl+F と View > Toggle Full Screen を `cmuxToggleFullScreen()` に置換。メインウィンドウは同じ画面のまま `screen.frame` に広げ、メニューバーと Dock を自動非表示にする。もう一度押すと元のサイズに戻る。
+  - `Sources/App/CmuxMainWindow.swift`: 状態保持・入退出・`setFrame`/`constrainFrameRect` の制限解除
+  - `Sources/AppDelegate.swift`, `Sources/cmuxApp.swift`: 呼び出し元
+  - `Sources/AppDelegate+MonitorMemory.swift`, `Sources/AppDelegate.swift`（セッション保存）: 広げている間の画面サイズをウィンドウ位置として保存しない
+  - `Sources/WindowDecorationsController.swift`: 広げている間は信号機ボタンを隠す
+- 挙動: 緑ボタンは従来どおり標準フルスクリーン。標準フルスクリーン中に Cmd+Ctrl+F を押すとそこから抜ける。ウィンドウを閉じる・別ディスプレイへ移ると自動で解除。
 
 ## 2. 半透明
 
@@ -48,6 +51,14 @@ background-opacity = 0.65
 
 - 原因: `~/.claude/settings.json` の `"theme"` が `"light"`（黒字前提）で、macOS と cmux はダーク。
 - 対応: `"theme": "dark"`。macOS をライトに切り替えたときは `/config` で戻す。
+
+## 5. Claude Code 実行中のタイトル（ソース変更）
+
+- 原因: Claude Code などのプログラムは自分でタイトルを送る（例 `✳ cmuxアプリのカスタマイズ`）。実行中は zsh のフックが動かないので、フォルダ名が出ない。
+- 変更: `Sources/Workspace+TitleOwnership.swift` の `updatePanelTitle` で、ターミナルの現在ディレクトリ名を頭に付ける（`titlePrefixedWithDirectoryName`）。
+  - `✳ cmuxアプリのカスタマイズ` → `✳ cmux / cmuxアプリのカスタマイズ`（先頭の記号1文字は前に残す）
+  - zsh フックのタイトル（`cmux`、`cmux: コマンド`、`~`）はそのまま
+- 制約: タイトルが送られた時点のディレクトリで付く。Claude Code 実行中に cwd は変わらないので実用上は問題ない。
 
 ---
 
