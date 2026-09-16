@@ -10,6 +10,17 @@ import WebKit
 /// Find shortcuts. The configured shortcut stays app-owned so cmux can choose browser
 /// find or right-sidebar file search from the current focus owner.
 final class CmuxWebView: CmuxUndoableWebView {
+#if DEBUG
+    override func mouseMoved(with event: NSEvent) {
+        cmuxDebugLog("browser.hover.web event=moved point=\(convert(event.locationInWindow, from: nil)) frame=\(frame)")
+        super.mouseMoved(with: event)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        cmuxDebugLog("browser.hover.web event=entered point=\(convert(event.locationInWindow, from: nil)) frame=\(frame)")
+        super.mouseEntered(with: event)
+    }
+#endif
     var browserViewportModel: BrowserViewportModel?
     var onBrowserViewportHierarchyChanged: (() -> Void)?
 
