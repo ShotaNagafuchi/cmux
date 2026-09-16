@@ -183,7 +183,8 @@ extension AppDelegate {
         for window in mainWindows {
             // Native-fullscreen windows are owned by AppKit's Space machinery;
             // clamping them mid-transition fights the fullscreen teardown.
-            guard !window.styleMask.contains(.fullScreen) else { continue }
+            guard !window.styleMask.contains(.fullScreen),
+                  !window.cmuxIsInNonNativeFullscreen else { continue }
             let currentFrame = window.frame
             guard let corrected = Self.reconciledFrameAfterScreenChange(
                 frame: currentFrame,
@@ -222,7 +223,8 @@ extension AppDelegate {
         displays: (available: [SessionDisplayGeometry], fallback: SessionDisplayGeometry?)
     ) {
         for window in mainWindowsForVisibilityController() {
-            guard !window.styleMask.contains(.fullScreen) else { continue }
+            guard !window.styleMask.contains(.fullScreen),
+                  !window.cmuxIsInNonNativeFullscreen else { continue }
             guard let context = contextForMainTerminalWindow(window) else { continue }
             let windowTag = context.windowId.uuidString.prefix(8)
             guard let entry = windowConfigFrames[context.windowId]?.entry(for: signature) else {
@@ -312,7 +314,8 @@ extension AppDelegate {
             return
         }
         // 2. Fullscreen windows have no meaningful per-config frame to remember.
-        guard !window.styleMask.contains(.fullScreen) else {
+        guard !window.styleMask.contains(.fullScreen),
+              !window.cmuxIsInNonNativeFullscreen else {
             logCaptureSkipped(window, reason: reason, guardName: "fullscreen")
             return
         }

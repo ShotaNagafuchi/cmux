@@ -3970,7 +3970,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func persistWindowGeometry(from window: NSWindow?) {
         guard let window else { return }
         persistWindowGeometry(
-            frame: SessionRectSnapshot(window.frame),
+            frame: SessionRectSnapshot(window.cmuxPersistableFrame),
             display: displaySnapshot(for: window)
         )
     }
@@ -5427,7 +5427,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         return SessionWindowSnapshot(
             windowId: route.windowId,
-            frame: window.map { SessionRectSnapshot($0.frame) },
+            frame: window.map { SessionRectSnapshot($0.cmuxPersistableFrame) },
             display: displaySnapshot(for: window),
             tabManager: tabManagerSnapshot,
             sidebar: SessionSidebarSnapshot(
@@ -5482,7 +5482,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
         return SessionWindowSnapshot(
             windowId: windowId,
-            frame: window.map { SessionRectSnapshot($0.frame) },
+            frame: window.map { SessionRectSnapshot($0.cmuxPersistableFrame) },
             display: displaySnapshot(for: window),
             tabManager: tabManagerSnapshot,
             sidebar: sidebarSnapshot,
@@ -15142,7 +15142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let targetWindow = mainWindowForShortcutEvent(event) else {
                 return false
             }
-            targetWindow.toggleFullScreen(nil)
+            targetWindow.cmuxToggleFullScreen()
             return true
         }
 

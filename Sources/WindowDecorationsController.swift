@@ -472,6 +472,9 @@ final class WindowDecorationsController {
     }
 
     private func shouldHideTrafficLights(for window: NSWindow) -> Bool {
+        if window.cmuxIsInNonNativeFullscreen {
+            return true
+        }
         if window.isSheet {
             return true
         }

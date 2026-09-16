@@ -1152,7 +1152,7 @@ struct cmuxApp: App {
 
             splitCommandButton(title: String(localized: "command.toggleFullScreen.title", defaultValue: "Toggle Full Screen"), shortcut: menuShortcut(for: .toggleFullScreen)) {
                 guard let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow else { return }
-                targetWindow.toggleFullScreen(nil)
+                targetWindow.cmuxToggleFullScreen()
             }
 
             Divider()

@@ -97,6 +97,10 @@ func configureCmuxMainWindowDragBehavior(_ window: NSWindow) {
 final class CmuxMainWindow: NSWindow {
     private let workspaceSwitchSignposts = WorkspaceSwitchSignposts()
 
+    /// Saved state while this window fills its screen in place (iTerm2-style)
+    /// instead of moving into a native fullscreen Space. `nil` when not active.
+    fileprivate(set) var nonNativeFullscreenState: CmuxNonNativeFullscreenState?
+
     override func becomeKey() {
         let switchInterval = workspaceSwitchSignposts.begin(
             "ws.switch.window-become-key",
@@ -115,7 +119,7 @@ final class CmuxMainWindow: NSWindow {
     /// (observed live: the window at 29,000 points wide, growing every
     /// pass). The user sizes this window; layout does not.
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
-        guard !styleMask.contains(.fullScreen) else {
+        guard !styleMask.contains(.fullScreen), nonNativeFullscreenState == nil else {
             super.setFrame(frameRect, display: flag)
             return
         }
@@ -348,6 +352,10 @@ final class CmuxMainWindow: NSWindow {
     /// otherwise be stranded off-screen (e.g. a display was disconnected), so a
     /// genuinely lost window can still be pulled back into view.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        // Non-native fullscreen deliberately covers the menu bar area.
+        if nonNativeFullscreenState != nil {
+            return frameRect
+        }
         if Self.shouldPreserveFrameDuringConstrain(
             frameRect,
             visibleFrames: NSScreen.screens.map(\.visibleFrame)
@@ -453,5 +461,120 @@ extension CmuxMainWindow {
             width: width,
             height: height
         )
+    }
+}
+
+// MARK: - Non-native fullscreen
+
+/// What a ``CmuxMainWindow`` needs to leave non-native fullscreen.
+struct CmuxNonNativeFullscreenState {
+    let restoreFrame: NSRect
+    let screenDisplayID: UInt32?
+    let restorePresentationOptions: NSApplication.PresentationOptions
+    let observers: [NSObjectProtocol]
+}
+
+extension NSWindow {
+    /// The single action behind the Toggle Full Screen shortcut and menu item.
+    /// cmux main windows fill their current screen in place (iTerm2-style
+    /// non-native fullscreen); other windows keep AppKit's native fullscreen.
+    func cmuxToggleFullScreen() {
+        guard let window = self as? CmuxMainWindow else {
+            toggleFullScreen(nil)
+            return
+        }
+        window.toggleNonNativeFullscreen()
+    }
+
+    /// Whether this window currently fills its screen via non-native fullscreen.
+    var cmuxIsInNonNativeFullscreen: Bool {
+        (self as? CmuxMainWindow)?.nonNativeFullscreenState != nil
+    }
+
+    /// The frame to persist for this window: the pre-fullscreen frame while in
+    /// non-native fullscreen, so a relaunch does not restore a screen-sized window.
+    var cmuxPersistableFrame: NSRect {
+        (self as? CmuxMainWindow)?.nonNativeFullscreenState?.restoreFrame ?? frame
+    }
+}
+
+extension CmuxMainWindow {
+    static let nonNativeFullscreenDidChangeNotification = Notification.Name("cmux.nonNativeFullscreenDidChange")
+
+    /// Presentation options while the fullscreen window is key. AppKit requires
+    /// `.autoHideMenuBar` to be paired with a Dock hide option.
+    private static let nonNativeFullscreenPresentationOptions: NSApplication.PresentationOptions = [
+        .autoHideDock,
+        .autoHideMenuBar,
+    ]
+
+    func toggleNonNativeFullscreen() {
+        if nonNativeFullscreenState != nil {
+            exitNonNativeFullscreen()
+            return
+        }
+        // A window already in a native fullscreen Space (entered via the green
+        // button) leaves it instead of stacking a second fullscreen mode.
+        if styleMask.contains(.fullScreen) {
+            toggleFullScreen(nil)
+            return
+        }
+        enterNonNativeFullscreen()
+    }
+
+    private func enterNonNativeFullscreen() {
+        guard let screen else { return }
+        let center = NotificationCenter.default
+        let observers: [NSObjectProtocol] = [
+            center.addObserver(forName: NSWindow.willCloseNotification, object: self, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.exitNonNativeFullscreen() }
+            },
+            center.addObserver(forName: NSWindow.didChangeScreenNotification, object: self, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self,
+                          let state = self.nonNativeFullscreenState,
+                          state.screenDisplayID != self.screen?.cmuxDisplayID else { return }
+                    self.exitNonNativeFullscreen()
+                }
+            },
+            center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: self, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard self?.nonNativeFullscreenState != nil else { return }
+                    NSApp.presentationOptions = Self.nonNativeFullscreenPresentationOptions
+                }
+            },
+            center.addObserver(forName: NSWindow.didResignKeyNotification, object: self, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let state = self?.nonNativeFullscreenState else { return }
+                    NSApp.presentationOptions = state.restorePresentationOptions
+                }
+            },
+        ]
+        nonNativeFullscreenState = CmuxNonNativeFullscreenState(
+            restoreFrame: frame,
+            screenDisplayID: screen.cmuxDisplayID,
+            restorePresentationOptions: NSApp.presentationOptions,
+            observers: observers
+        )
+        NSApp.presentationOptions = Self.nonNativeFullscreenPresentationOptions
+        AppDelegate.shared?.applyWindowDecorations(to: self)
+        makeKeyAndOrderFront(nil)
+        // Apply the frame on the next turn so the menu bar and Dock hide first;
+        // otherwise AppKit still reserves their space.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.nonNativeFullscreenState != nil else { return }
+            self.setFrame(screen.frame, display: true)
+            NotificationCenter.default.post(name: Self.nonNativeFullscreenDidChangeNotification, object: self)
+        }
+    }
+
+    private func exitNonNativeFullscreen() {
+        guard let state = nonNativeFullscreenState else { return }
+        state.observers.forEach(NotificationCenter.default.removeObserver)
+        nonNativeFullscreenState = nil
+        NSApp.presentationOptions = state.restorePresentationOptions
+        setFrame(state.restoreFrame, display: true)
+        AppDelegate.shared?.applyWindowDecorations(to: self)
+        NotificationCenter.default.post(name: Self.nonNativeFullscreenDidChangeNotification, object: self)
     }
 }
