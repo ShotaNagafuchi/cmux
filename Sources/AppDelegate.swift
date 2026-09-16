@@ -1535,6 +1535,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             telemetryEnabled: telemetryEnabled
         )
         let isRunningUnderXCTest = sentryStartupPolicy.isRunningUnderXCTest
+        if !isRunningUnderXCTest {
+            PostHogAnalytics.shared.recordLaunchIdentity()
+        }
         StartupBreadcrumbLog.append(
             "appDelegate.didFinish.begin",
             fields: [
@@ -2109,6 +2112,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         // A Mac that slept through the reply nudge picks parked replies up here.
         PhoneReplyInboxCoordinator.shared.sweepSoon(reason: "app-activation")
+        // Reconcile pairing on wake so an opted-in Mac resumes and an opted-out
+        // Mac tears down any work that was in flight before sleep.
+        MobileHostService.shared.syncToSettings()
 
         guard let notificationStore else { return }
         notificationStore.handleApplicationDidBecomeActive()
@@ -2674,7 +2680,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return pendingCrashScanTask
         }
         let task = Task {
-            await GhosttyCrashBreadcrumb.pendingCrashFromDefaultStorage()
+            let pendingCrash = await GhosttyCrashBreadcrumb.pendingCrashFromDefaultStorage()
+            if let pendingCrash {
+                // Mirror the previous run's crash into PostHog Error Tracking
+                // so crash rate is comparable by app version (#12717).
+                PostHogAnalytics.shared.captureCrashException(pendingCrash: pendingCrash)
+            }
+            return pendingCrash
         }
         pendingCrashScanTask = task
         return task
@@ -9808,7 +9820,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @discardableResult
     func addWorkspaceInPreferredMainWindow(
-        title: String? = nil,
+        title: String? = nil, titleSource: Workspace.CustomTitleSource = .user,
         workingDirectory: String? = nil,
         initialTerminalInput: String? = nil,
         initialSurface: NewWorkspaceInitialSurface = .terminal,
@@ -9865,7 +9877,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let workspace: Workspace?
         if initialSurface == .browser {
             workspace = context.tabManager.addWorkspaceIfActive(
-                title: title,
+                title: title, titleSource: titleSource,
                 initialSurface: .browser,
                 initialBrowserURL: initialBrowserURL,
                 initialBrowserOmnibarVisible: initialBrowserOmnibarVisible,
@@ -9875,7 +9887,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             )
         } else if workingDirectory != nil || initialTerminalInput != nil {
             workspace = context.tabManager.addWorkspaceIfActive(
-                title: title,
+                title: title, titleSource: titleSource,
                 workingDirectory: workingDirectory,
                 initialTerminalInput: initialTerminalInput,
                 select: true,
@@ -9884,7 +9896,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             )
         } else if title != nil {
             workspace = context.tabManager.addWorkspaceIfActive(
-                title: title,
+                title: title, titleSource: titleSource,
                 select: true,
                 applyCreationTitleAsCustomTitle: applyCreationTitleAsCustomTitle
             )
